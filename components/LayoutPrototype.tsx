@@ -60,9 +60,18 @@ export default function LayoutPrototype() {
   const [showLayoutDropdown, setShowLayoutDropdown] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [currentUserField, setCurrentUserField] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, string>>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    company: '',
+    bio: '',
+  });
   const channelRef = useRef<BroadcastChannel | null>(null);
   const currentUserRef = useRef<{ id: string; name: string; color: string } | null>(null);
   const currentFieldRef = useRef<string | null>(null);
+  const isUpdatingFromRemoteRef = useRef(false);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const minSidebarWidth = 200;
@@ -107,7 +116,7 @@ export default function LayoutPrototype() {
       }
     };
 
-    // Listen for other users' presence
+    // Listen for other users' presence and field updates
     channel.onmessage = (event) => {
       if (event.data.type === 'presence') {
         const user = event.data.user;
@@ -133,6 +142,21 @@ export default function LayoutPrototype() {
             return [...prev, updatedUser];
           }
         });
+      } else if (event.data.type === 'fieldUpdate') {
+        // Update field value from another user
+        const { fieldName, value, userId: updateUserId } = event.data;
+        // Don't update if it's from ourselves
+        if (updateUserId !== userId) {
+          isUpdatingFromRemoteRef.current = true;
+          setFormValues(prev => ({
+            ...prev,
+            [fieldName]: value,
+          }));
+          // Reset flag after a short delay
+          setTimeout(() => {
+            isUpdatingFromRemoteRef.current = false;
+          }, 100);
+        }
       }
     };
 
@@ -242,6 +266,28 @@ export default function LayoutPrototype() {
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
+  };
+
+  // Handle field value changes and broadcast to other users
+  const handleFieldChange = (fieldName: string, value: string) => {
+    // Don't broadcast if we're updating from a remote change
+    if (isUpdatingFromRemoteRef.current) return;
+
+    // Update local state
+    setFormValues(prev => ({
+      ...prev,
+      [fieldName]: value,
+    }));
+
+    // Broadcast the change to other users
+    if (channelRef.current && currentUserRef.current) {
+      channelRef.current.postMessage({
+        type: 'fieldUpdate',
+        fieldName,
+        value,
+        userId: currentUserRef.current.id,
+      });
+    }
   };
 
   // Sample user data for list view
@@ -447,6 +493,7 @@ export default function LayoutPrototype() {
                             {isTextarea ? (
                               <textarea
                                 rows={3}
+                                value={formValues[fieldName] || ''}
                                 placeholder={fieldName === 'bio' ? 'Tell us about yourself...' : ''}
                                 className="w-full px-3 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all resize-none"
                                 style={{
@@ -455,10 +502,12 @@ export default function LayoutPrototype() {
                                 }}
                                 onFocus={() => setCurrentUserField(fieldName)}
                                 onBlur={() => setCurrentUserField(null)}
+                                onChange={(e) => handleFieldChange(fieldName, e.target.value)}
                               />
                             ) : (
                               <input
                                 type={fieldName === 'email' ? 'email' : fieldName === 'phone' ? 'tel' : 'text'}
+                                value={formValues[fieldName] || ''}
                                 placeholder={
                                   fieldName === 'firstName' ? 'Enter first name' :
                                   fieldName === 'lastName' ? 'Enter last name' :
@@ -473,6 +522,7 @@ export default function LayoutPrototype() {
                                 }}
                                 onFocus={() => setCurrentUserField(fieldName)}
                                 onBlur={() => setCurrentUserField(null)}
+                                onChange={(e) => handleFieldChange(fieldName, e.target.value)}
                               />
                             )}
                           </div>
