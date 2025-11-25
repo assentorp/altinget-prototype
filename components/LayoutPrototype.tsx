@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Random name generator
 const firstNames = ['Emma', 'Lars', 'Sofia', 'Mads', 'Ida', 'Oliver', 'Freja', 'Noah', 'Clara', 'William', 'Alma', 'Oscar', 'Ella', 'Victor', 'Nora', 'Emil', 'Luna', 'Felix', 'Astrid', 'August'];
 const userColors = ['#F87171', '#FB923C', '#FBBF24', '#34D399', '#22D3EE', '#60A5FA', '#A78BFA', '#F472B6', '#E879F9', '#818CF8'];
-const formFields = ['firstName', 'lastName', 'email', 'phone', 'company', 'bio'];
 
 type OnlineUser = {
   id: string;
@@ -115,16 +114,29 @@ export default function LayoutPrototype() {
         const state = channel.presenceState();
         const users: OnlineUser[] = [];
 
-        for (const presences of Object.values(state)) {
-          if (Array.isArray(presences)) {
-            for (const presence of presences) {
-              if (presence && typeof presence === 'object') {
+        for (const [userId, presences] of Object.entries(state)) {
+          if (Array.isArray(presences) && presences.length > 0) {
+            // Get the latest presence data (last item in array)
+            const presence = presences[presences.length - 1] as unknown;
+            if (presence && typeof presence === 'object') {
+              // Cast to our expected presence structure
+              const presenceData = presence as {
+                id?: string;
+                name?: string;
+                color?: string;
+                activeField?: string | null;
+                lastSeen?: number;
+                [key: string]: unknown;
+              };
+
+              // Only add if we have valid data
+              if (presenceData.id || presenceData.name) {
                 users.push({
-                  id: presence.id as string,
-                  name: presence.name as string,
-                  color: presence.color as string,
-                  activeField: (presence.activeField as string | null) || null,
-                  lastSeen: (presence.lastSeen as number) || Date.now(),
+                  id: presenceData.id || userId,
+                  name: presenceData.name || 'Unknown',
+                  color: presenceData.color || '#999999',
+                  activeField: presenceData.activeField || null,
+                  lastSeen: presenceData.lastSeen || Date.now(),
                 });
               }
             }
@@ -132,12 +144,6 @@ export default function LayoutPrototype() {
         }
 
         setOnlineUsers(users);
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        // User joined
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        // User left
       })
       .on('broadcast', { event: 'fieldUpdate' }, (payload) => {
         // Handle field value updates
