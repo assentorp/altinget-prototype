@@ -10,6 +10,9 @@ export default function LayoutPrototype() {
   const [viewportMode, setViewportMode] = useState('desktop');
   const [sidebarWidth, setSidebarWidth] = useState(270);
   const [isResizing, setIsResizing] = useState(false);
+  const [showSearch, setShowSearch] = useState(true);
+  const [layoutType, setLayoutType] = useState<'form' | 'list'>('form');
+  const [showLayoutDropdown, setShowLayoutDropdown] = useState(false);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const minSidebarWidth = 200;
@@ -47,10 +50,23 @@ export default function LayoutPrototype() {
     };
   }, [isResizing]);
 
+
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
   };
+
+  // Sample user data for list view
+  const sampleUsers = [
+    { id: 1, name: 'Emma Andersen', email: 'emma.andersen@example.com', phone: '+45 12 34 56 78', company: 'Tech Solutions A/S' },
+    { id: 2, name: 'Lars Hansen', email: 'lars.hansen@example.com', phone: '+45 23 45 67 89', company: 'Design Studio' },
+    { id: 3, name: 'Sofia Nielsen', email: 'sofia.nielsen@example.com', phone: '+45 34 56 78 90', company: 'Marketing Pro' },
+    { id: 4, name: 'Mads Pedersen', email: 'mads.pedersen@example.com', phone: '+45 45 67 89 01', company: 'Digital Agency' },
+    { id: 5, name: 'Ida Christensen', email: 'ida.christensen@example.com', phone: '+45 56 78 90 12', company: 'Consulting Group' },
+    { id: 6, name: 'Oliver Jensen', email: 'oliver.jensen@example.com', phone: '+45 67 89 01 23', company: 'Innovation Lab' },
+    { id: 7, name: 'Freja Larsen', email: 'freja.larsen@example.com', phone: '+45 78 90 12 34', company: 'Creative Works' },
+    { id: 8, name: 'Noah Andersen', email: 'noah.andersen@example.com', phone: '+45 89 01 23 45', company: 'Business Solutions' },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
@@ -109,22 +125,19 @@ export default function LayoutPrototype() {
               </div>
             </div>
 
-            {/* Resize Handle - only show in desktop mode */}
+            {/* Resize Handle - only show in desktop mode, attached to border-r */}
             {!isMobileView && (
               <div
                 onMouseDown={handleResizeStart}
-                className="w-1 cursor-ew-resize hover:bg-blue-400 active:bg-blue-500 transition-colors flex-shrink-0 relative group"
-                style={{ marginLeft: 4, marginRight: -4 }}
-              >
-                <div className="absolute inset-y-0 -left-1 -right-1" />
-              </div>
+                className="absolute top-0 right-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-400 active:bg-blue-500 transition-colors z-10 -mr-0.5"
+              />
             )}
           </div>
 
           {/* Main Content */}
           <div className="flex-1 flex flex-col min-w-0">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 {isMobileView && (
                   <button
@@ -147,103 +160,150 @@ export default function LayoutPrototype() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
-                  Cancel
+                <button className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
+                  Preview
                 </button>
                 <button className="px-3 py-1.5 text-sm text-white bg-gray-900 rounded-md hover:bg-gray-800 transition-colors">
-                  Save
+                  Publish
                 </button>
               </div>
             </div>
 
             {/* Search */}
-            <div className="px-4 py-3 bg-white border-b border-gray-100">
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                />
+            {showSearch && (
+              <div className="px-6 py-3 bg-white border-b border-gray-200">
+                <div className="relative">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Container Area */}
             <div className="flex-1 overflow-auto">
-              <div
-                className={`mx-auto p-4 transition-all duration-300 ${
-                  containerWidth === 'narrow' ? 'max-w-[860px]' : 'max-w-none'
-                }`}
-              >
-                {/* Form Header */}
-                <div className="pb-4 border-b border-gray-100 mb-6">
-                  <h2 className="text-lg font-medium text-gray-900">Account Settings</h2>
-                  <p className="text-sm text-gray-500 mt-1">Update your personal information and preferences.</p>
-                </div>
-
-                {/* Form Fields */}
+              {layoutType === 'form' ? (
                 <div
-                  className={`grid gap-5 transition-all duration-300 ${
-                    formColumns === 2 && !isMobileView ? 'grid-cols-2' : 'grid-cols-1'
+                  className={`mx-auto p-6 transition-all duration-300 ${
+                    containerWidth === 'narrow' ? 'max-w-[860px]' : 'max-w-none'
                   }`}
                 >
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-gray-700">First name</label>
-                    <input
-                      type="text"
-                      placeholder="Enter first name"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                    />
+                  {/* Form Header */}
+                  <div className="pb-4 border-b border-gray-100 mb-6">
+                    <h2 className="text-2xl font-medium text-gray-900">Account Settings</h2>
+                    <p className="text-base text-gray-500 mt-1">Update your personal information and preferences.</p>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-gray-700">Last name</label>
-                    <input
-                      type="text"
-                      placeholder="Enter last name"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                    />
-                  </div>
+                  {/* Form Fields */}
+                  <div
+                    className={`grid gap-5 transition-all duration-300 ${
+                      formColumns === 2 && !isMobileView ? 'grid-cols-2' : 'grid-cols-1'
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-gray-700">First name</label>
+                      <input
+                        type="text"
+                        placeholder="Enter first name"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
+                      />
+                    </div>
 
-                  <div className={`space-y-1.5 ${formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}>
-                    <label className="block text-sm font-medium text-gray-700">Email address</label>
-                    <input
-                      type="email"
-                      placeholder="you@example.com"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                    />
-                  </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-gray-700">Last name</label>
+                      <input
+                        type="text"
+                        placeholder="Enter last name"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
+                      />
+                    </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-gray-700">Phone</label>
-                    <input
-                      type="tel"
-                      placeholder="+45 00 00 00 00"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                    />
-                  </div>
+                    <div className={`space-y-1.5 ${formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}>
+                      <label className="block text-sm font-medium text-gray-700">Email address</label>
+                      <input
+                        type="email"
+                        placeholder="you@example.com"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
+                      />
+                    </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-gray-700">Company</label>
-                    <input
-                      type="text"
-                      placeholder="Company name"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                    />
-                  </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-gray-700">Phone</label>
+                      <input
+                        type="tel"
+                        placeholder="+45 00 00 00 00"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
+                      />
+                    </div>
 
-                  <div className={`space-y-1.5 ${formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}>
-                    <label className="block text-sm font-medium text-gray-700">Bio</label>
-                    <textarea
-                      rows={3}
-                      placeholder="Tell us about yourself..."
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all resize-none"
-                    />
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-gray-700">Company</label>
+                      <input
+                        type="text"
+                        placeholder="Company name"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
+                      />
+                    </div>
+
+                    <div className={`space-y-1.5 ${formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}>
+                      <label className="block text-sm font-medium text-gray-700">Bio</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Tell us about yourself..."
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all resize-none"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div
+                  className={`transition-all duration-300 ${
+                    containerWidth === 'narrow' ? 'max-w-[860px] mx-auto' : 'max-w-none'
+                  }`}
+                >
+                  {/* List Header */}
+                  <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex justify-start">
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center gap-2 whitespace-nowrap"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                      Filter
+                    </button>
+                  </div>
+
+                  {/* Table List - Full Width with Horizontal Scroll on Mobile */}
+                  <div className={`overflow-x-auto ${isMobileView ? 'overflow-x-scroll' : ''}`}>
+                    <table className={`border-collapse ${isMobileView ? 'min-w-[600px]' : 'w-full'}`}>
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-3 px-6 text-sm font-medium text-gray-700">Name</th>
+                          <th className="text-left py-3 px-6 text-sm font-medium text-gray-700">Email</th>
+                          <th className="text-left py-3 px-6 text-sm font-medium text-gray-700">Phone</th>
+                          <th className="text-left py-3 px-6 text-sm font-medium text-gray-700">Company</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sampleUsers.map((user) => (
+                          <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                            <td className="py-3 px-6 text-sm text-gray-900">{user.name}</td>
+                            <td className="py-3 px-6 text-sm text-gray-600">{user.email}</td>
+                            <td className="py-3 px-6 text-sm text-gray-600">{user.phone}</td>
+                            <td className="py-3 px-6 text-sm text-gray-600">{user.company}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -330,6 +390,85 @@ export default function LayoutPrototype() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="w-px h-8 bg-gray-200" />
+
+          {/* Layout Type Dropdown */}
+          <div className="flex items-center gap-3 relative">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Layout</span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowLayoutDropdown(!showLayoutDropdown);
+                }}
+                className="px-3 py-1.5 text-xs font-medium rounded-md transition-all bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center gap-2"
+              >
+                <span>{layoutType === 'form' ? 'Form' : 'List'}</span>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showLayoutDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowLayoutDropdown(false)}
+                  />
+                  <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[120px]">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLayoutType('form');
+                        setShowLayoutDropdown(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors ${
+                        layoutType === 'form'
+                          ? 'bg-gray-50 text-gray-900'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Form
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLayoutType('list');
+                        setShowLayoutDropdown(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors ${
+                        layoutType === 'list'
+                          ? 'bg-gray-50 text-gray-900'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      List
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="w-px h-8 bg-gray-200" />
+
+          {/* Search Toggle */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Search</span>
+            <button
+              onClick={() => setShowSearch(!showSearch)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                showSearch
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {showSearch ? 'On' : 'Off'}
+            </button>
           </div>
 
           {/* Close Button */}
