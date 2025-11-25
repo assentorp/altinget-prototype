@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Random name generator
 const firstNames = ['Emma', 'Lars', 'Sofia', 'Mads', 'Ida', 'Oliver', 'Freja', 'Noah', 'Clara', 'William', 'Alma', 'Oscar', 'Ella', 'Victor', 'Nora', 'Emil', 'Luna', 'Felix', 'Astrid', 'August'];
@@ -68,7 +70,7 @@ export default function LayoutPrototype() {
     company: '',
     bio: '',
   });
-  const channelRef = useRef<BroadcastChannel | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
   const currentUserRef = useRef<{ id: string; name: string; color: string } | null>(null);
   const currentFieldRef = useRef<string | null>(null);
   const isUpdatingFromRemoteRef = useRef(false);
@@ -79,7 +81,7 @@ export default function LayoutPrototype() {
 
   const isMobileView = viewportMode === 'mobile';
 
-  // Initialize current user and BroadcastChannel
+  // Initialize current user and Supabase Realtime
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -87,94 +89,102 @@ export default function LayoutPrototype() {
     const userData = getUserData();
     currentUserRef.current = { id: userId, name: userData.name, color: userData.color };
 
-    // Create BroadcastChannel for cross-tab communication
-    const channel = new BroadcastChannel('user-presence');
-    channelRef.current = channel;
+    // Create Supabase Realtime channel for collaboration
+    const channel = supabase.channel('form-collaboration', {
+      config: {
+        presence: {
+          key: userId,
+        },
+      },
+    });
 
-    // Add current user to the list
-    setOnlineUsers([{
-      id: userId,
-      name: userData.name,
-      color: userData.color,
-      activeField: null,
-      lastSeen: Date.now(),
-    }]);
-
-    // Broadcast presence
-    const broadcastPresence = () => {
-      if (channel && currentUserRef.current) {
-        channel.postMessage({
-          type: 'presence',
-          user: {
-            id: currentUserRef.current.id,
-            name: currentUserRef.current.name,
-            color: currentUserRef.current.color,
-            activeField: currentFieldRef.current,
-            lastSeen: Date.now(),
-          },
-        });
-      }
+    // Track presence with user data
+    const trackPresence = () => {
+      channel.track({
+        id: userId,
+        name: userData.name,
+        color: userData.color,
+        activeField: currentFieldRef.current,
+        lastSeen: Date.now(),
+      });
     };
 
-    // Listen for other users' presence and field updates
-    channel.onmessage = (event) => {
-      if (event.data.type === 'presence') {
-        const user = event.data.user;
-        // Update users array - always create new objects to ensure React detects change
-        setOnlineUsers(prev => {
-          const existingIndex = prev.findIndex(u => u.id === user.id);
-          const updatedUser = {
-            id: user.id,
-            name: user.name,
-            color: user.color,
-            activeField: user.activeField,
-            lastSeen: user.lastSeen,
-          };
+    // Subscribe to presence changes
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const users: OnlineUser[] = [];
 
-          if (existingIndex >= 0) {
-            // Always update to ensure React sees the change
-            const newUsers = prev.map((u, idx) =>
-              idx === existingIndex ? updatedUser : u
-            );
-            return newUsers;
-          } else {
-            // Add new user
-            return [...prev, updatedUser];
+        for (const presences of Object.values(state)) {
+          if (Array.isArray(presences)) {
+            for (const presence of presences) {
+              if (presence && typeof presence === 'object') {
+                users.push({
+                  id: presence.id as string,
+                  name: presence.name as string,
+                  color: presence.color as string,
+                  activeField: (presence.activeField as string | null) || null,
+                  lastSeen: (presence.lastSeen as number) || Date.now(),
+                });
+              }
+            }
           }
-        });
-      } else if (event.data.type === 'fieldUpdate') {
-        // Update field value from another user
-        const { fieldName, value, userId: updateUserId } = event.data;
-        // Don't update if it's from ourselves
+        }
+
+        setOnlineUsers(users);
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        // User joined
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        // User left
+      })
+      .on('broadcast', { event: 'fieldUpdate' }, (payload) => {
+        // Handle field value updates
+        const { fieldName, value, userId: updateUserId } = payload.payload;
         if (updateUserId !== userId) {
           isUpdatingFromRemoteRef.current = true;
           setFormValues(prev => ({
             ...prev,
             [fieldName]: value,
           }));
-          // Reset flag after a short delay
           setTimeout(() => {
             isUpdatingFromRemoteRef.current = false;
           }, 100);
         }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // Initial presence tracking
+          trackPresence();
+        }
+      });
+
+    channelRef.current = channel;
+
+    // Update presence when field changes
+    const updatePresence = () => {
+      if (channel && currentUserRef.current) {
+        channel.track({
+          id: currentUserRef.current.id,
+          name: currentUserRef.current.name,
+          color: currentUserRef.current.color,
+          activeField: currentFieldRef.current,
+          lastSeen: Date.now(),
+        });
       }
     };
 
-    // Send initial presence
-    broadcastPresence();
-
     // Send heartbeat every 2 seconds
-    const heartbeatInterval = setInterval(broadcastPresence, 2000);
+    const heartbeatInterval = setInterval(updatePresence, 2000);
 
     // Cleanup inactive users (users not seen for 5 seconds)
     const cleanupInterval = setInterval(() => {
       setOnlineUsers(prev => {
         const now = Date.now();
         const activeUsers = prev.filter(user => {
-          // Keep current user or users seen within 5 seconds
           return user.id === userId || (now - user.lastSeen <= 5000);
         });
-        // Only update if something changed
         return activeUsers.length !== prev.length ? activeUsers : prev;
       });
     }, 1000);
@@ -182,7 +192,7 @@ export default function LayoutPrototype() {
     return () => {
       clearInterval(heartbeatInterval);
       clearInterval(cleanupInterval);
-      channel.close();
+      channel.unsubscribe();
     };
   }, []);
 
@@ -190,46 +200,16 @@ export default function LayoutPrototype() {
   useEffect(() => {
     currentFieldRef.current = currentUserField;
 
-    // Update our own user in the array so UI reflects our current field
-    if (currentUserRef.current) {
-      setOnlineUsers(prev => {
-        const existingIndex = prev.findIndex(u => u.id === currentUserRef.current!.id);
-        const updatedUser = {
-          id: currentUserRef.current!.id,
-          name: currentUserRef.current!.name,
-          color: currentUserRef.current!.color,
-          activeField: currentUserField,
-          lastSeen: Date.now(),
-        };
-
-        if (existingIndex >= 0) {
-          // Always create new array and new user object to force React update
-          return prev.map((u, idx) =>
-            idx === existingIndex ? updatedUser : { ...u }
-          );
-        } else {
-          return [...prev, updatedUser];
-        }
+    // Update presence immediately when field changes
+    if (channelRef.current && currentUserRef.current) {
+      channelRef.current.track({
+        id: currentUserRef.current.id,
+        name: currentUserRef.current.name,
+        color: currentUserRef.current.color,
+        activeField: currentUserField,
+        lastSeen: Date.now(),
       });
     }
-
-    // Broadcast immediately when field changes (small delay to ensure state is updated)
-    const timeoutId = setTimeout(() => {
-      if (channelRef.current && currentUserRef.current) {
-        channelRef.current.postMessage({
-          type: 'presence',
-          user: {
-            id: currentUserRef.current.id,
-            name: currentUserRef.current.name,
-            color: currentUserRef.current.color,
-            activeField: currentUserField,
-            lastSeen: Date.now(),
-          },
-        });
-      }
-    }, 10);
-
-    return () => clearTimeout(timeoutId);
   }, [currentUserField]);
 
   // Handle sidebar resize
@@ -279,13 +259,17 @@ export default function LayoutPrototype() {
       [fieldName]: value,
     }));
 
-    // Broadcast the change to other users
+    // Broadcast the change to other users via Supabase
     if (channelRef.current && currentUserRef.current) {
-      channelRef.current.postMessage({
-        type: 'fieldUpdate',
-        fieldName,
-        value,
-        userId: currentUserRef.current.id,
+      // @ts-ignore - Supabase Realtime send method
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'fieldUpdate',
+        payload: {
+          fieldName,
+          value,
+          userId: currentUserRef.current.id,
+        },
       });
     }
   };
