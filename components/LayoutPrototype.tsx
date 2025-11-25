@@ -84,6 +84,23 @@ export default function LayoutPrototype() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    // Check if Supabase is configured
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('placeholder')) {
+      if (typeof window !== 'undefined') {
+        console.warn('Supabase not configured. Collaboration features disabled.');
+      }
+      return;
+    }
+
+    // Verify supabase client is available
+    if (!supabase || !supabase.channel) {
+      console.warn('Supabase client not available. Collaboration features disabled.');
+      return;
+    }
+
     const userId = getUserId();
     const userData = getUserData();
     currentUserRef.current = { id: userId, name: userData.name, color: userData.color };
