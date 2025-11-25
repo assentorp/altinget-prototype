@@ -2,6 +2,51 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 
+// Random name generator
+const firstNames = ['Emma', 'Lars', 'Sofia', 'Mads', 'Ida', 'Oliver', 'Freja', 'Noah', 'Clara', 'William', 'Alma', 'Oscar', 'Ella', 'Victor', 'Nora', 'Emil', 'Luna', 'Felix', 'Astrid', 'August'];
+const userColors = ['#F87171', '#FB923C', '#FBBF24', '#34D399', '#22D3EE', '#60A5FA', '#A78BFA', '#F472B6', '#E879F9', '#818CF8'];
+const formFields = ['firstName', 'lastName', 'email', 'phone', 'company', 'bio'];
+
+type OnlineUser = {
+  id: string;
+  name: string;
+  color: string;
+  activeField: string | null;
+  lastSeen: number;
+};
+
+const getRandomName = () => firstNames[Math.floor(Math.random() * firstNames.length)];
+const getRandomColor = (usedColors: string[]) => {
+  const available = userColors.filter(c => !usedColors.includes(c));
+  return available.length > 0
+    ? available[Math.floor(Math.random() * available.length)]
+    : userColors[Math.floor(Math.random() * userColors.length)];
+};
+
+// Generate unique user ID for this session
+const getUserId = () => {
+  if (typeof window === 'undefined') return '';
+  let userId = sessionStorage.getItem('userId');
+  if (!userId) {
+    userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    sessionStorage.setItem('userId', userId);
+  }
+  return userId;
+};
+
+// Generate user name and color for this session
+const getUserData = () => {
+  if (typeof window === 'undefined') return { name: '', color: '' };
+  let userData = sessionStorage.getItem('userData');
+  if (!userData) {
+    const name = getRandomName();
+    const color = getRandomColor([]);
+    userData = JSON.stringify({ name, color });
+    sessionStorage.setItem('userData', userData);
+  }
+  return JSON.parse(userData);
+};
+
 export default function LayoutPrototype() {
   const [containerWidth, setContainerWidth] = useState('wide');
   const [formColumns, setFormColumns] = useState(1);
@@ -13,12 +58,155 @@ export default function LayoutPrototype() {
   const [showSearch, setShowSearch] = useState(true);
   const [layoutType, setLayoutType] = useState<'form' | 'list'>('form');
   const [showLayoutDropdown, setShowLayoutDropdown] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [currentUserField, setCurrentUserField] = useState<string | null>(null);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const currentUserRef = useRef<{ id: string; name: string; color: string } | null>(null);
+  const currentFieldRef = useRef<string | null>(null);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const minSidebarWidth = 200;
   const maxSidebarWidth = 500;
 
   const isMobileView = viewportMode === 'mobile';
+
+  // Initialize current user and BroadcastChannel
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const userId = getUserId();
+    const userData = getUserData();
+    currentUserRef.current = { id: userId, name: userData.name, color: userData.color };
+
+    // Create BroadcastChannel for cross-tab communication
+    const channel = new BroadcastChannel('user-presence');
+    channelRef.current = channel;
+
+    // Add current user to the list
+    setOnlineUsers([{
+      id: userId,
+      name: userData.name,
+      color: userData.color,
+      activeField: null,
+      lastSeen: Date.now(),
+    }]);
+
+    // Broadcast presence
+    const broadcastPresence = () => {
+      if (channel && currentUserRef.current) {
+        channel.postMessage({
+          type: 'presence',
+          user: {
+            id: currentUserRef.current.id,
+            name: currentUserRef.current.name,
+            color: currentUserRef.current.color,
+            activeField: currentFieldRef.current,
+            lastSeen: Date.now(),
+          },
+        });
+      }
+    };
+
+    // Listen for other users' presence
+    channel.onmessage = (event) => {
+      if (event.data.type === 'presence') {
+        const user = event.data.user;
+        // Update users array - always create new objects to ensure React detects change
+        setOnlineUsers(prev => {
+          const existingIndex = prev.findIndex(u => u.id === user.id);
+          const updatedUser = {
+            id: user.id,
+            name: user.name,
+            color: user.color,
+            activeField: user.activeField,
+            lastSeen: user.lastSeen,
+          };
+
+          if (existingIndex >= 0) {
+            // Always update to ensure React sees the change
+            const newUsers = prev.map((u, idx) =>
+              idx === existingIndex ? updatedUser : u
+            );
+            return newUsers;
+          } else {
+            // Add new user
+            return [...prev, updatedUser];
+          }
+        });
+      }
+    };
+
+    // Send initial presence
+    broadcastPresence();
+
+    // Send heartbeat every 2 seconds
+    const heartbeatInterval = setInterval(broadcastPresence, 2000);
+
+    // Cleanup inactive users (users not seen for 5 seconds)
+    const cleanupInterval = setInterval(() => {
+      setOnlineUsers(prev => {
+        const now = Date.now();
+        const activeUsers = prev.filter(user => {
+          // Keep current user or users seen within 5 seconds
+          return user.id === userId || (now - user.lastSeen <= 5000);
+        });
+        // Only update if something changed
+        return activeUsers.length !== prev.length ? activeUsers : prev;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      clearInterval(cleanupInterval);
+      channel.close();
+    };
+  }, []);
+
+  // Update ref and broadcast when field changes
+  useEffect(() => {
+    currentFieldRef.current = currentUserField;
+
+    // Update our own user in the array so UI reflects our current field
+    if (currentUserRef.current) {
+      setOnlineUsers(prev => {
+        const existingIndex = prev.findIndex(u => u.id === currentUserRef.current!.id);
+        const updatedUser = {
+          id: currentUserRef.current!.id,
+          name: currentUserRef.current!.name,
+          color: currentUserRef.current!.color,
+          activeField: currentUserField,
+          lastSeen: Date.now(),
+        };
+
+        if (existingIndex >= 0) {
+          // Always create new array and new user object to force React update
+          return prev.map((u, idx) =>
+            idx === existingIndex ? updatedUser : { ...u }
+          );
+        } else {
+          return [...prev, updatedUser];
+        }
+      });
+    }
+
+    // Broadcast immediately when field changes (small delay to ensure state is updated)
+    const timeoutId = setTimeout(() => {
+      if (channelRef.current && currentUserRef.current) {
+        channelRef.current.postMessage({
+          type: 'presence',
+          user: {
+            id: currentUserRef.current.id,
+            name: currentUserRef.current.name,
+            color: currentUserRef.current.color,
+            activeField: currentUserField,
+            lastSeen: Date.now(),
+          },
+        });
+      }
+    }, 10);
+
+    return () => clearTimeout(timeoutId);
+  }, [currentUserField]);
 
   // Handle sidebar resize
   useEffect(() => {
@@ -67,6 +255,7 @@ export default function LayoutPrototype() {
     { id: 7, name: 'Freja Larsen', email: 'freja.larsen@example.com', phone: '+45 78 90 12 34', company: 'Creative Works' },
     { id: 8, name: 'Noah Andersen', email: 'noah.andersen@example.com', phone: '+45 89 01 23 45', company: 'Business Solutions' },
   ];
+
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
@@ -159,13 +348,34 @@ export default function LayoutPrototype() {
                   <span>Settings</span>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
-                  Preview
-                </button>
-                <button className="px-3 py-1.5 text-sm text-white bg-gray-900 rounded-md hover:bg-gray-800 transition-colors">
-                  Publish
-                </button>
+              <div className="flex items-center gap-4">
+                {/* Online Users */}
+                {onlineUsers.filter(user => user.id !== currentUserRef.current?.id).length > 0 && (
+                  <div className="flex items-center pr-4 border-r border-gray-200">
+                    <div className="flex -space-x-2">
+                      {onlineUsers
+                        .filter(user => user.id !== currentUserRef.current?.id)
+                        .map((user) => (
+                          <div
+                            key={user.id}
+                            className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-medium"
+                            style={{ backgroundColor: user.color }}
+                            title={user.name}
+                          >
+                            {user.name.charAt(0)}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
+                    Preview
+                  </button>
+                  <button className="px-3 py-1.5 text-sm text-white bg-gray-900 rounded-md hover:bg-gray-800 transition-colors">
+                    Publish
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -205,59 +415,70 @@ export default function LayoutPrototype() {
                       formColumns === 2 && !isMobileView ? 'grid-cols-2' : 'grid-cols-1'
                     }`}
                   >
-                    <div className="space-y-1.5">
-                      <label className="block text-sm font-medium text-gray-700">First name</label>
-                      <input
-                        type="text"
-                        placeholder="Enter first name"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                      />
-                    </div>
+                    {(['firstName', 'lastName', 'email', 'phone', 'company', 'bio'] as const).map((fieldName, index) => {
+                      const fieldUser = onlineUsers.find(u =>
+                        u.activeField === fieldName && u.id !== currentUserRef.current?.id
+                      );
+                      const isTextarea = fieldName === 'bio';
+                      const isWide = fieldName === 'email' || fieldName === 'bio';
 
-                    <div className="space-y-1.5">
-                      <label className="block text-sm font-medium text-gray-700">Last name</label>
-                      <input
-                        type="text"
-                        placeholder="Enter last name"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                      />
-                    </div>
-
-                    <div className={`space-y-1.5 ${formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}>
-                      <label className="block text-sm font-medium text-gray-700">Email address</label>
-                      <input
-                        type="email"
-                        placeholder="you@example.com"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block text-sm font-medium text-gray-700">Phone</label>
-                      <input
-                        type="tel"
-                        placeholder="+45 00 00 00 00"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block text-sm font-medium text-gray-700">Company</label>
-                      <input
-                        type="text"
-                        placeholder="Company name"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all"
-                      />
-                    </div>
-
-                    <div className={`space-y-1.5 ${formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}>
-                      <label className="block text-sm font-medium text-gray-700">Bio</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Tell us about yourself..."
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-300 transition-all resize-none"
-                      />
-                    </div>
+                      return (
+                        <div
+                          key={fieldName}
+                          className={`space-y-1.5 ${isWide && formColumns === 2 && !isMobileView ? 'col-span-2' : ''}`}
+                        >
+                          <label className="block text-sm font-medium text-gray-700">
+                            {fieldName === 'firstName' ? 'First name' :
+                             fieldName === 'lastName' ? 'Last name' :
+                             fieldName === 'email' ? 'Email address' :
+                             fieldName === 'phone' ? 'Phone' :
+                             fieldName === 'company' ? 'Company' :
+                             'Bio'}
+                          </label>
+                          <div className="relative">
+                            {fieldUser && (
+                              <div
+                                className="absolute -top-2 right-2 px-2 py-0.5 rounded text-xs font-medium text-white z-10"
+                                style={{ backgroundColor: fieldUser.color }}
+                              >
+                                {fieldUser.name}
+                              </div>
+                            )}
+                            {isTextarea ? (
+                              <textarea
+                                rows={3}
+                                placeholder={fieldName === 'bio' ? 'Tell us about yourself...' : ''}
+                                className="w-full px-3 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all resize-none"
+                                style={{
+                                  borderWidth: '2px',
+                                  borderColor: fieldUser?.color || '#D1D5DB',
+                                }}
+                                onFocus={() => setCurrentUserField(fieldName)}
+                                onBlur={() => setCurrentUserField(null)}
+                              />
+                            ) : (
+                              <input
+                                type={fieldName === 'email' ? 'email' : fieldName === 'phone' ? 'tel' : 'text'}
+                                placeholder={
+                                  fieldName === 'firstName' ? 'Enter first name' :
+                                  fieldName === 'lastName' ? 'Enter last name' :
+                                  fieldName === 'email' ? 'you@example.com' :
+                                  fieldName === 'phone' ? '+45 00 00 00 00' :
+                                  'Company name'
+                                }
+                                className="w-full px-3 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                                style={{
+                                  borderWidth: '2px',
+                                  borderColor: fieldUser?.color || '#D1D5DB',
+                                }}
+                                onFocus={() => setCurrentUserField(fieldName)}
+                                onBlur={() => setCurrentUserField(null)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
